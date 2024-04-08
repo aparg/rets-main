@@ -1,21 +1,22 @@
 const handleOptionalParameters = (req, res, next) => {
   const tableName = req.tableName;
-  const { $limit, $skip, $select, $range, $selectOr } = req.query;
+  const { $limit, $skip, $select, $range, $selectOr, $avg } = req.query;
 
-  const limit = parseInt($limit) || 10; 
-  const skip = parseInt($skip) || 0; 
+  const limit = parseInt($limit) || $avg ? 500 : 10;
+  const skip = parseInt($skip) || 0;
 
   const selectFields = parseSelectParameters($select);
   const rangeFields = parseRangeParameters($range);
   const selectOrFields = parseSelectParameters($selectOr); // Parse $selectOr parameters
-
+  const avgField = parseAverageParameter($avg);
   const databaseQuery = buildDatabaseQuery({
     limit,
     skip,
     selectFields,
     rangeFields,
-    selectOrFields, 
+    selectOrFields,
     tableName,
+    avgField,
   });
 
   req.databaseQuery = databaseQuery;
@@ -23,16 +24,26 @@ const handleOptionalParameters = (req, res, next) => {
   next();
 };
 
-const buildDatabaseQuery = ({ limit, skip, selectFields, rangeFields, selectOrFields, tableName }) => {
-  const query = `SELECT * FROM ${tableName}`;
+const buildDatabaseQuery = ({
+  limit,
+  skip,
+  selectFields,
+  rangeFields,
+  selectOrFields,
+  avgField,
+  tableName,
+}) => {
   const conditions = [];
-
+  const avgColumn = [];
   addSelectConditions(conditions, selectFields);
   addSelectOrConditions(conditions, selectOrFields); // Add conditions for $selectOr
   addRangeConditions(conditions, rangeFields);
-
+  addAverage(avgColumn, avgField);
+  const query = `SELECT ${avgColumn[0] || "*"} FROM ${tableName}`;
   return addLimitOffset(
-    conditions.length ? `${query} WHERE ${conditions.join(" AND ")} ORDER BY TimestampSql DESC` : `${query} ORDER BY TimestampSql DESC`,
+    conditions.length
+      ? `${query} WHERE ${conditions.join(" AND ")} ORDER BY TimestampSql DESC`
+      : `${query} ORDER BY TimestampSql DESC`,
     limit,
     skip
   );
@@ -40,7 +51,7 @@ const buildDatabaseQuery = ({ limit, skip, selectFields, rangeFields, selectOrFi
 
 const addSelectOrConditions = (conditions, selectOrFields) => {
   if (selectOrFields.length > 0) {
-    const selectOrConditions = selectOrFields.map(field => {
+    const selectOrConditions = selectOrFields.map((field) => {
       const [fieldName, value] = field.split("=");
       return getConditionString(fieldName, value);
     });
@@ -82,6 +93,10 @@ const addRangeConditions = (conditions, rangeFields) => {
   });
 };
 
+const addAverage = (avgColumn, avgField) => {
+  avgField && avgColumn.push(`AVG(${avgField})`);
+};
+
 const getConditionString = (fieldName, value) => {
   if (value === "true" || value === "false") {
     return `${fieldName} = ${value}`;
@@ -98,6 +113,8 @@ const addLimitOffset = (query, limit, skip) => {
 const parseSelectParameters = (select) => (select ? select.split(",") : []);
 
 const parseRangeParameters = (range) => (range ? range.split(",") : []);
+
+const parseAverageParameter = (avg) => (avg ? avg : null);
 
 module.exports = {
   handleOptionalParameters,
